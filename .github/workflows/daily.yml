@@ -2,6 +2,8 @@ name: Daily AI Agent
 
 on:
   workflow_dispatch:
+  schedule:
+  - cron: "00 23 * * *"
 
 jobs:
   build:
@@ -24,6 +26,52 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: python main.py
+      - name: Send Email Report
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+        run: |
+          python -c "
+          import smtplib
+          from email.mime.text import MIMEText
+          from email.mime.multipart import MIMEMultipart
+          import os
+          from datetime import datetime
+
+          # Email configuration
+          smtp_server = os.getenv('SMTP_SERVER')
+          smtp_port = int(os.getenv('SMTP_PORT', 587))
+          smtp_username = os.getenv('SMTP_USERNAME')
+          smtp_password = os.getenv('SMTP_PASSWORD')
+          recipients = os.getenv('EMAIL_RECIPIENTS').split(',')
+
+          # Read report
+          today = datetime.now().strftime('%Y-%m-%d')
+          report_path = f'reports/{today}.md'
+          with open(report_path, 'r', encoding='utf-8') as f:
+              report_content = f.read()
+
+          # Create message
+          msg = MIMEMultipart()
+          msg['From'] = smtp_username
+          msg['To'] = ', '.join(recipients)
+          msg['Subject'] = f'AI Research Report - {today}'
+
+          msg.attach(MIMEText(report_content, 'plain', 'utf-8'))
+
+          # Send email
+          server = smtplib.SMTP(smtp_server, smtp_port)
+          server.starttls()
+          server.login(smtp_username, smtp_password)
+          text = msg.as_string()
+          server.sendmail(smtp_username, recipients, text)
+          server.quit()
+
+          print('Email sent successfully!')
+          "
       - name: Commit report
         run: |
           git config --global user.name "github-actions[bot]"
