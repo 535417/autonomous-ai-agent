@@ -18,22 +18,35 @@ base_url="https://api.deepseek.com"
 
 # RSS 新闻源
 
-rss_url = "https://hnrss.org/frontpage"
-
-# 获取新闻
-
-feed = feedparser.parse(rss_url)
+rss_urls = [
+    "https://venturebeat.com/category/ai/feed/",
+    "https://www.theverge.com/ai/rss/index.xml",
+    "https://export.arxiv.org/rss/cs.AI",
+    "https://openai.com/blog/rss/"
+]
 
 news_items = []
 
-# 提取前5条新闻
+# 获取新闻
 
-for entry in feed.entries[:5]:
-    news_items.append(entry.title)
+for url in rss_urls:
+    feed = feedparser.parse(url)
+    source_title = feed.feed.get("title", url)
+    for entry in feed.entries[:3]:
+        title = entry.get("title", "").strip()
+        if title:
+            item = f"{title} ({source_title})"
+            if item not in news_items:
+                news_items.append(item)
 
 # 合并新闻内容
 
-combined_news = "\n".join(news_items)
+combined_news = "\n".join(news_items[:15])
+
+# 获取日期
+
+today = datetime.now().strftime("%Y-%m-%d")
+report_date_display = datetime.now().strftime("%Y年%m月%d日")
 
 # Prompt
 
@@ -51,28 +64,26 @@ prompt = f"""
 3. 商业价值判断
 4. 风险分析
 
+请将报告日期固定为 {report_date_display}，不要生成其他日期。
+
 输出 Markdown 格式。
 """
 
 # 调用 DeepSeek API
 
 response = client.chat.completions.create(
-model="deepseek-chat",
-messages=[
-{
-"role": "user",
-"content": prompt
-}
-]
+    model="deepseek-chat",
+    messages=[
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ]
 )
 
 # 获取 AI 输出结果
 
 result = response.choices[0].message.content
-
-# 获取日期
-
-today = datetime.now().strftime("%Y-%m-%d")
 
 # 创建 reports 文件夹
 
@@ -80,7 +91,8 @@ os.makedirs("reports", exist_ok=True)
 
 # 写入 Markdown 文件
 
+report_header = f"# AI Research Report - {today}\n\n**报告日期：** {report_date_display}\n\n"
 with open(f"reports/{today}.md", "w", encoding="utf-8") as f:
-    f.write(result)
+    f.write(report_header + result)
 
 print("AI report generated successfully!")
