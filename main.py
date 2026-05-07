@@ -3,6 +3,12 @@ import requests
 import feedparser
 from openai import OpenAI
 from datetime import datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+tz = ZoneInfo("Asia/Shanghai")
+today = datetime.now(tz).strftime("%Y-%m-%d")
+report_date_display = datetime.now(tz).strftime("%Y年%m月%d日")
 from dotenv import load_dotenv
 
 # 加载环境变量
@@ -167,3 +173,5 @@ with open(f"reports/{today}.md", "w", encoding="utf-8") as f:
     f.write(report_header + result)
 
 print("AI report generated successfully!")
+
+
