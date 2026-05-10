@@ -8,6 +8,12 @@ AI Research Digest Agent 是一个开源的 AI 行业情报自动化产出系统
 - 与 OpenAI 兼容的 API 调用结构，易于接入 Token 计划
 - 日志化研究报告输出，适合学术与企业评估
 
+## 📋 项目文档
+
+- **[详细项目报告](PROJECT_REPORT.md)** - 中文版完整技术文档
+- **[English Project Report](PROJECT_REPORT_EN.md)** - 英文版项目报告
+- **[Agent 协作指南](AGENTS_GUIDE.md)** - 多 Agent 系统详细说明
+
 ## 核心功能
 
 - 自动抓取 AI 行业 RSS 新闻源
