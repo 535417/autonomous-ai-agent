@@ -3,6 +3,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import feedparser
+import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -32,6 +34,53 @@ def load_api_key() -> str:
     return api_key
 
 
+def fetch_html_titles(url, max_titles=3):
+    try:
+        response = requests.get(
+            url,
+            timeout=12,
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                              '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+            }
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return []
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    titles = []
+
+    # Try page title and open graph title
+    page_title = (soup.find('meta', property='og:title') or soup.find('title'))
+    if page_title:
+        raw_title = page_title.get('content') if page_title.has_attr('content') else page_title.text
+        if raw_title:
+            titles.append(raw_title.strip())
+
+    # Collect headings from the page
+    for selector in ['article h1', 'article h2', 'article h3', 'h1', 'h2', 'h3']:
+        for element in soup.select(selector):
+            text = element.get_text(separator=' ', strip=True)
+            if text and text not in titles:
+                titles.append(text)
+            if len(titles) >= max_titles:
+                break
+        if len(titles) >= max_titles:
+            break
+
+    # Fallback: collect meaningful links with text
+    if len(titles) < max_titles:
+        for link in soup.select('a[href]'):
+            text = link.get_text(separator=' ', strip=True)
+            if text and len(text) > 20 and text not in titles:
+                titles.append(text)
+            if len(titles) >= max_titles:
+                break
+
+    return titles[:max_titles]
+
+
 def fetch_news_items(urls, max_per_source=3, max_total=15):
     news_items = []
     for url in urls:
@@ -40,15 +89,17 @@ def fetch_news_items(urls, max_per_source=3, max_total=15):
         if hasattr(feed, 'feed') and isinstance(feed.feed, dict):
             source_title = feed.feed.get('title', url) or url
 
-        if not getattr(feed, 'entries', None):
-            continue
+        entries = []
+        if getattr(feed, 'entries', None):
+            entries = [entry.get('title', '').strip() for entry in feed.entries if entry.get('title', '').strip()]
 
-        for entry in feed.entries[:max_per_source]:
-            title = entry.get('title', '').strip()
-            if title:
-                item = f"{title} ({source_title})"
-                if item not in news_items:
-                    news_items.append(item)
+        if not entries:
+            entries = fetch_html_titles(url, max_per_source)
+
+        for title in entries[:max_per_source]:
+            item = f"{title} ({source_title})"
+            if item not in news_items:
+                news_items.append(item)
             if len(news_items) >= max_total:
                 break
         if len(news_items) >= max_total:
