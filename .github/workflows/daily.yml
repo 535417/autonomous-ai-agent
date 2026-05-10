@@ -34,7 +34,6 @@ jobs:
           SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
         run: python main_multi_agent.py
       - name: Send Email Report
-        if: ${{ secrets.SMTP_SERVER && secrets.SMTP_PORT && secrets.SMTP_USERNAME && secrets.SMTP_PASSWORD && secrets.EMAIL_RECIPIENTS }}
         env:
           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -42,6 +41,11 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
         run: |
+          if [ -z "$SMTP_SERVER" ] || [ -z "$SMTP_PORT" ] || [ -z "$SMTP_USERNAME" ] || [ -z "$SMTP_PASSWORD" ] || [ -z "$EMAIL_RECIPIENTS" ]; then
+            echo "SMTP or email configuration missing; skipping email step."
+            exit 0
+          fi
+
           python - <<'PY'
           import os
           from datetime import datetime
