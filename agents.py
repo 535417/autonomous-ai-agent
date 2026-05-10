@@ -106,10 +106,13 @@ class GLMAgent(Agent):
         load_dotenv()
         api_key = os.getenv('GLM_API_KEY')
         if not api_key:
-            raise RuntimeError('Missing GLM_API_KEY')
+            print(f"Warning: GLM_API_KEY not found, {name} will be skipped")
+            api_key = None  # Allow None for graceful degradation
         super().__init__(name, "glm-4", api_key, "https://open.bigmodel.cn/api/paas/v4")
     
     def call_llm(self, messages: List[Dict[str, str]]) -> str:
+        if not self.api_key:
+            raise RuntimeError(f"GLM_API_KEY not configured for {self.name}")
         from openai import OpenAI
         client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         response = client.chat.completions.create(
@@ -134,10 +137,13 @@ class GroqAgent(Agent):
         load_dotenv()
         api_key = os.getenv('GROQ_API_KEY')
         if not api_key:
-            raise RuntimeError('Missing GROQ_API_KEY')
+            print(f"Warning: GROQ_API_KEY not found, {name} will be skipped")
+            api_key = None
         super().__init__(name, "mixtral-8x7b-32768", api_key, "https://api.groq.com/openai/v1")
     
     def call_llm(self, messages: List[Dict[str, str]]) -> str:
+        if not self.api_key:
+            raise RuntimeError(f"GROQ_API_KEY not configured for {self.name}")
         from openai import OpenAI
         client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         response = client.chat.completions.create(
@@ -162,10 +168,13 @@ class MistralAgent(Agent):
         load_dotenv()
         api_key = os.getenv('MISTRAL_API_KEY')
         if not api_key:
-            raise RuntimeError('Missing MISTRAL_API_KEY')
+            print(f"Warning: MISTRAL_API_KEY not found, {name} will be skipped")
+            api_key = None
         super().__init__(name, "mistral-large-latest", api_key, "https://api.mistral.ai/v1")
     
     def call_llm(self, messages: List[Dict[str, str]]) -> str:
+        if not self.api_key:
+            raise RuntimeError(f"MISTRAL_API_KEY not configured for {self.name}")
         from openai import OpenAI
         client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         response = client.chat.completions.create(
@@ -190,10 +199,13 @@ class SiliconFlowAgent(Agent):
         load_dotenv()
         api_key = os.getenv('SILICONFLOW_API_KEY')
         if not api_key:
-            raise RuntimeError('Missing SILICONFLOW_API_KEY')
+            print(f"Warning: SILICONFLOW_API_KEY not found, {name} will be skipped")
+            api_key = None
         super().__init__(name, "Qwen2-72B-Instruct", api_key, "https://api.siliconflow.cn/v1")
     
     def call_llm(self, messages: List[Dict[str, str]]) -> str:
+        if not self.api_key:
+            raise RuntimeError(f"SILICONFLOW_API_KEY not configured for {self.name}")
         from openai import OpenAI
         client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         response = client.chat.completions.create(
@@ -374,37 +386,91 @@ class Orchestrator:
     
     def __init__(self):
         # 初始化 5 个 Agent（可配置使用不同模型）
-        self.collector = CollectorAgent(GLMAgent("GLM-Collector"))
-        self.classifier = ClassifierAgent(GroqAgent("Groq-Classifier"))
-        self.analyst = AnalystAgent(DeepSeekAgent("DeepSeek-Analyst"))
-        self.writer = WriterAgent(MistralAgent("Mistral-Writer"))
-        self.reviewer = ReviewerAgent(SiliconFlowAgent("SiliconFlow-Reviewer"))
+        self.agents = {}
+        
+        try:
+            self.agents['collector'] = CollectorAgent(GLMAgent("GLM-Collector"))
+        except Exception as e:
+            print(f"Collector Agent failed to initialize: {e}")
+            self.agents['collector'] = None
+            
+        try:
+            self.agents['classifier'] = ClassifierAgent(GroqAgent("Groq-Classifier"))
+        except Exception as e:
+            print(f"Classifier Agent failed to initialize: {e}")
+            self.agents['classifier'] = None
+            
+        try:
+            self.agents['analyst'] = AnalystAgent(DeepSeekAgent("DeepSeek-Analyst"))
+        except Exception as e:
+            print(f"Analyst Agent failed to initialize: {e}")
+            self.agents['analyst'] = None
+            
+        try:
+            self.agents['writer'] = WriterAgent(MistralAgent("Mistral-Writer"))
+        except Exception as e:
+            print(f"Writer Agent failed to initialize: {e}")
+            self.agents['writer'] = None
+            
+        try:
+            self.agents['reviewer'] = ReviewerAgent(SiliconFlowAgent("SiliconFlow-Reviewer"))
+        except Exception as e:
+            print(f"Reviewer Agent failed to initialize: {e}")
+            self.agents['reviewer'] = None
+        
+        # 检查至少有一个Agent可用
+        available_agents = [k for k, v in self.agents.items() if v is not None]
+        if not available_agents:
+            raise RuntimeError("No agents could be initialized. Please check your API keys.")
+        
+        print(f"Initialized agents: {available_agents}")
     
     def run(self, news_items: List[str], report_date: str) -> str:
         """执行完整的 5 Agent 协作流程"""
         print(f"\n{'='*60}")
-        print(f"启动多 Agent 协作流程，共 5 个步骤")
+        print(f"启动多 Agent 协作流程")
         print(f"{'='*60}\n")
         
         # Step 1: 采集
         print("[Step 1/5] 采集器处理中...")
-        collector_output = self.collector.execute(news_items)
+        if self.agents['collector']:
+            collector_output = self.agents['collector'].execute(news_items)
+        else:
+            # 降级：使用简单的文本处理
+            print("使用降级模式：跳过采集器，直接处理新闻")
+            collector_output = {"raw_news": news_items, "enriched_result": "\n".join(news_items)}
         
         # Step 2: 分类
         print("[Step 2/5] 分类器处理中...")
-        classifier_output = self.classifier.execute(collector_output)
+        if self.agents['classifier']:
+            classifier_output = self.agents['classifier'].execute(collector_output)
+        else:
+            print("使用降级模式：跳过分类器")
+            classifier_output = {"collector_output": collector_output, "classified_result": "新闻分类功能不可用"}
         
         # Step 3: 分析
         print("[Step 3/5] 分析师处理中...")
-        analyst_output = self.analyst.execute(classifier_output)
+        if self.agents['analyst']:
+            analyst_output = self.agents['analyst'].execute(classifier_output)
+        else:
+            print("使用降级模式：跳过分析师")
+            analyst_output = {"classifier_output": classifier_output, "analysis_result": "趋势分析功能不可用"}
         
         # Step 4: 撰写
         print("[Step 4/5] 撰写师处理中...")
-        writer_output = self.writer.execute(analyst_output, report_date)
+        if self.agents['writer']:
+            writer_output = self.agents['writer'].execute(analyst_output, report_date)
+        else:
+            print("使用降级模式：跳过撰写师")
+            writer_output = {"analyst_output": analyst_output, "report_markdown": f"# AI Research Report - {report_date}\n\n报告生成功能不可用"}
         
         # Step 5: 审核
         print("[Step 5/5] 评审师处理中...")
-        final_report = self.reviewer.execute(writer_output)
+        if self.agents['reviewer']:
+            final_report = self.agents['reviewer'].execute(writer_output)
+        else:
+            print("使用降级模式：跳过评审师")
+            final_report = writer_output['report_markdown']
         
         print(f"\n{'='*60}")
         print("多 Agent 协作流程完成！")
