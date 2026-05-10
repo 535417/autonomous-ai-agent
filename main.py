@@ -1,69 +1,74 @@
-import os
-import requests
-import feedparser
-from openai import OpenAI
-from datetime import datetime
+﻿import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-tz = ZoneInfo("Asia/Shanghai")
-today = datetime.now(tz).strftime("%Y-%m-%d")
-report_date_display = datetime.now(tz).strftime("%Y年%m月%d日")
+import feedparser
 from dotenv import load_dotenv
+from openai import OpenAI
 
-# 加载环境变量
+TZ = ZoneInfo('Asia/Shanghai')
 
-load_dotenv()
-
-# 初始化 DeepSeek 客户端
-
-client = OpenAI(
-api_key=os.getenv("DEEPSEEK_API_KEY"),
-base_url="https://api.deepseek.com"
-)
-
-# RSS 新闻源
-
-rss_urls = [
-    "https://venturebeat.com/category/ai/feed/",
-    "https://www.theverge.com/ai/rss/index.xml",
-    "https://export.arxiv.org/rss/cs.AI",
-    "https://openai.com/blog/rss/"
+RSS_URLS = [
+    'https://www.chatbotnews.ai/',
+    'https://www.the500feed.com/',
+    'https://ainewshub.io/',
+    'https://venturebeat.com/ai/',
+    'https://techcrunch.com/category/artificial-intelligence/',
+    'https://www.technologyreview.com/topic/artificial-intelligence/',
+    'https://huggingface.co/blog',
+    'https://openai.com/news/',
+    'https://www.anthropic.com/news',
+    'https://deepmind.google/discover/blog/'
 ]
 
-news_items = []
+REPORT_PATH = 'reports'
 
-# 获取新闻
 
-for url in rss_urls:
-    feed = feedparser.parse(url)
-    source_title = feed.feed.get("title", url)
-    for entry in feed.entries[:3]:
-        title = entry.get("title", "").strip()
-        if title:
-            item = f"{title} ({source_title})"
-            if item not in news_items:
-                news_items.append(item)
+def load_api_key() -> str:
+    load_dotenv()
+    api_key = os.getenv('DEEPSEEK_API_KEY')
+    if not api_key:
+        raise RuntimeError('Missing required environment variable: DEEPSEEK_API_KEY')
+    return api_key
 
-# 合并新闻内容
 
-combined_news = "\n".join(news_items[:15])
+def fetch_news_items(urls, max_per_source=3, max_total=15):
+    news_items = []
+    for url in urls:
+        feed = feedparser.parse(url)
+        source_title = url
+        if hasattr(feed, 'feed') and isinstance(feed.feed, dict):
+            source_title = feed.feed.get('title', url) or url
 
-# 获取日期
+        if not getattr(feed, 'entries', None):
+            continue
 
-today = datetime.now().strftime("%Y-%m-%d")
-report_date_display = datetime.now().strftime("%Y年%m月%d日")
+        for entry in feed.entries[:max_per_source]:
+            title = entry.get('title', '').strip()
+            if title:
+                item = f"{title} ({source_title})"
+                if item not in news_items:
+                    news_items.append(item)
+            if len(news_items) >= max_total:
+                break
+        if len(news_items) >= max_total:
+            break
 
-# Prompt
+    if not news_items:
+        raise RuntimeError('未从配置的数据源中获取到任何新闻，请检查信息源是否可用。')
+    return news_items[:max_total]
 
-prompt = f"""
+
+def build_prompt(news_items, report_date_display):
+    combined_news = '\n'.join(news_items)
+    return f"""
 你是一个专业的AI技术情报分析助手，负责基于以下 AI 行业新闻：
 
 {combined_news}整理为高质量技术趋势报告。
 
 ## 输入说明
 你将收到经过处理的AI新闻列表，这些新闻已经：
-- 来自多个信息源（VentureBeat / The Verge / arXiv / OpenAI Blog）
+- 来自十个 AI 行业来源（Chatbot News / The500Feed / AI News Hub / VentureBeat AI / TechCrunch AI / MIT Technology Review AI / Hugging Face Blog / OpenAI News / Anthropic News / DeepMind Discover Blog）
 - 每个源已提取前3条新闻
 - 已完成去重与合并
 - 最终保留约15条最重要内容
@@ -146,32 +151,34 @@ prompt = f"""
 输出 Markdown 格式。
 """
 
-# 调用 DeepSeek API
 
-response = client.chat.completions.create(
-    model="deepseek-chat",
-    messages=[
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ]
-)
-
-# 获取 AI 输出结果
-
-result = response.choices[0].message.content
-
-# 创建 reports 文件夹
-
-os.makedirs("reports", exist_ok=True)
-
-# 写入 Markdown 文件
-
-report_header = f"# AI Research Report - {today}\n\n**报告日期：** {report_date_display}\n\n"
-with open(f"reports/{today}.md", "w", encoding="utf-8") as f:
-    f.write(report_header + result)
-
-print("AI report generated successfully!")
+def create_report_file(report_date, report_body):
+    os.makedirs(REPORT_PATH, exist_ok=True)
+    filename = os.path.join(REPORT_PATH, f'{report_date}.md')
+    header = f"# AI Research Report - {report_date}\n\n**报告日期：** {report_date}\n\n"
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(header + report_body)
+    return filename
 
 
+def main():
+    api_key = load_api_key()
+    client = OpenAI(api_key=api_key, base_url='https://api.deepseek.com')
+
+    news_items = fetch_news_items(RSS_URLS)
+    report_date_display = datetime.now(TZ).strftime('%Y年%m月%d日')
+    report_date = datetime.now(TZ).strftime('%Y-%m-%d')
+
+    prompt = build_prompt(news_items, report_date_display)
+    response = client.chat.completions.create(
+        model='deepseek-chat',
+        messages=[{'role': 'user', 'content': prompt}]
+    )
+    result = response.choices[0].message.content
+
+    filename = create_report_file(report_date, result)
+    print(f'AI report generated successfully: {filename}')
+
+
+if __name__ == '__main__':
+    main()
