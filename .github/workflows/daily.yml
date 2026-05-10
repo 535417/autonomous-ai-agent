@@ -34,6 +34,7 @@ jobs:
           SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
         run: python main_multi_agent.py
       - name: Send Email Report
+        if: ${{ secrets.SMTP_SERVER && secrets.SMTP_PORT && secrets.SMTP_USERNAME && secrets.SMTP_PASSWORD && secrets.EMAIL_RECIPIENTS }}
         env:
           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -53,9 +54,9 @@ jobs:
           smtp_port = int(os.getenv('SMTP_PORT', 587))
           smtp_username = os.getenv('SMTP_USERNAME')
           smtp_password = os.getenv('SMTP_PASSWORD')
-          recipients = os.getenv('EMAIL_RECIPIENTS', '').split(',')
+          recipients = [r.strip() for r in os.getenv('EMAIL_RECIPIENTS', '').split(',') if r.strip()]
 
-          if not recipients or recipients == ['']:
+          if not recipients:
               raise ValueError('EMAIL_RECIPIENTS is not configured.')
 
           report_date = datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d')
