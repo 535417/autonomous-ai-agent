@@ -232,18 +232,38 @@ def create_report_file(report_date, report_body):
 
 
 def check_env():
-    """Check if .env file exists and has at least one API key configured"""
-    if not os.path.exists('.env'):
-        print("=" * 70)
-        print("警告：未找到 .env 文件！")
-        print("本程序至少需要一个 LLM API 密钥才能运行。")
-        print("请复制 .env.example 到 .env 并填写你的 API 密钥：")
-        print("  cp .env.example .env")
-        print("（GitHub Actions 中请直接配置 Secrets，无需 .env 文件）")
-        print("=" * 70)
+    """Check if at least one LLM API key is available (from .env or environment)"""
+    API_KEY_NAMES = [
+        'DEEPSEEK_API_KEY',
+        'GLM_API_KEY',
+        'GROQ_API_KEY',
+        'SILICONFLOW_API_KEY',
+    ]
+    available_keys = [k for k in API_KEY_NAMES if os.getenv(k)]
+
+    if available_keys:
+        print(f"[环境检测] 已找到 {len(available_keys)} 个 API 密钥：{', '.join(available_keys)}")
+        return True
+
+    # No API keys found anywhere
+    print("=" * 70)
+    print("警告：未检测到任何 LLM API 密钥！")
+    print()
+    if os.path.exists('.env'):
+        print(".env 文件存在，但未从中读取到有效的 API 密钥。")
+        print("请检查 .env 文件中是否正确设置了以下变量：")
+        for k in API_KEY_NAMES:
+            print(f"  {k}=your_key_here")
+    else:
+        print("未找到 .env 文件，环境变量中也未检测到 API 密钥。")
         print()
-        return False
-    return True
+        print("配置方式二选一：")
+        print("  本地运行 → cp .env.example .env 并填入至少一个 API 密钥")
+        print("  GitHub Actions → Settings > Secrets > Actions 中添加密钥")
+        print(f"  当前支持的密钥名称：{', '.join(API_KEY_NAMES)}")
+    print("=" * 70)
+    print()
+    return False
 
 
 def main():
