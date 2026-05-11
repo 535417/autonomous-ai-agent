@@ -252,20 +252,25 @@ class WriterAgent:
         前序推理上下文：
         {previous_context}
 
-        报告结构（Markdown 格式）：
-        # AI 行业日报 - {report_date}
+        严格按以下结构输出（Markdown 格式）：
 
-        ## 今日核心动态（Top 5）
-        [列出 5 条最重要的新闻 + 来源 + 行业意义]
+        # AI行业技术情报日报 | {report_date}
 
-        ## 技术趋势分析
-        [基于分析结果展开 5-8 条趋势观察，每一条需要有具体判断而非泛泛列举]
+        **日期：{report_date}**
 
-        ## 值得关注的项目（Top 3）
-        [筛选今日最有价值的论文/产品/融资事件，说明为什么重要]
+        ---
 
-        ## 行业观察结论
-        [总结当前行业阶段、加速方向、潜在机遇]
+        ## 1. 今日AI核心动态（Top 5）
+        [列出 5 条最重要的新闻，每条包含：标题、来源类型、行业意义]
+
+        ## 2. 技术趋势分析
+        [5-8 条趋势观察，每条需要有明确的趋势判断，而非简单新闻列举]
+
+        ## 3. 值得关注的研究/项目（Top 3）
+        [筛选今日最有价值的论文/产品/融资事件，说明为什么重要及可能影响的方向]
+
+        ## 4. 行业观察结论
+        [总结当前行业阶段、加速方向、潜在机遇与风险]
         """
 
         result = self.agent.execute(prompt)
@@ -401,18 +406,46 @@ class Orchestrator:
         if self.agents['writer']:
             writer_output = self.agents['writer'].execute(analyst_output, report_date)
         else:
-            print("降级模式：基于新闻标题生成基础报告")
-            # Generate a basic report from raw news items
+            print("降级模式：基于新闻标题生成中文结构化基础报告")
             raw_items = news_items[:20]
-            news_list = "\n".join(f"- {item}" for item in raw_items)
-            degraded_report = f"""# AI 行业日报 - {report_date}
+            news_list = "\n".join(
+                f"{i+1}. {item}" for i, item in enumerate(raw_items)
+            )
+            degraded_report = f"""# AI行业技术情报日报 | {report_date}
 
-## 今日采集新闻标题
+---
+
+## 1. 今日AI核心动态（Top 5）
+
+{chr(10).join(f"{i+1}. {item.split(' (via ')[0] if ' (via ' in item else item}{'  [' + item.split('(via ')[1].rstrip(')') + ']' if '(via ' in item else ''}" for i, item in enumerate(raw_items[:5]))}
+
+---
+
+## 2. 技术趋势分析
+
+本日采集覆盖了以下主要方向的技术动态，包括但不限于：大模型训练与推理基础设施、AI Agent 与多智能体系统、开源模型生态演进、AI 产品化与商业化落地、学术前沿研究等。
+
+> **注意**：趋势深度分析需启用 LLM Agent。当前为基础新闻采集模式，下文列出全部采集到的新闻标题供参考。
+
+---
+
+## 3. 今日采集全部新闻标题
 
 {news_list}
 
 ---
-*注：本报告为未启用 LLM Agent 的基础版本（可能原因：API 密钥未配置）。请在 GitHub Secrets 中配置至少一个 API 密钥以获得 AI 驱动的完整分析报告。*
+
+## 4. 行业观察说明
+
+本报告当前处于**降级运行模式**，仅完成新闻采集与聚合，未进行 AI 驱动的深度分析。
+
+如需获取包含**趋势判断、技术洞察与投资方向建议**的完整版 AI 行业技术情报日报，请：
+1. 将 `.env.example` 复制为 `.env` 并填入至少一个 LLM 提供商的 API 密钥
+2. 或在 GitHub Actions Secrets 中配置相应的 API 密钥
+
+---
+
+> *本报告由 AI Research Agent 自动生成于 {report_date}*
 """
             writer_output = {"analyst_output": analyst_output, "report_markdown": degraded_report}
 

@@ -154,7 +154,7 @@ def create_report_file(report_date, report_body):
     os.makedirs('logs', exist_ok=True)
 
     filename = os.path.join(REPORT_PATH, f'{report_date}.md')
-    header = f"# AI 行业日报 - {report_date}\n\n**报告日期：** {report_date}\n\n"
+    header = f"# AI Research Report - {report_date}\n\n**报告日期：** {report_date}\n\n"
 
     with open(filename, 'w', encoding='utf-8') as f:
         f.write(header + report_body)
