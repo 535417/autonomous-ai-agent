@@ -4,6 +4,7 @@ Integrates multi-agent collaboration system with 5 different LLM providers
 """
 
 import os
+import re
 import sys
 
 # Fix Windows GBK encoding issue - force UTF-8 output
@@ -40,6 +41,59 @@ HTML_SOURCES = [
 
 REPORT_PATH = 'reports'
 
+# Patterns for filtering out noise / non-article titles
+NOISE_PATTERNS = [
+    r'^(More from|Get ready for|We.re feeling|Advertise with)\b',
+    r'^(Subscribe|Newsletter|Sign up|Log in|Register|Contact)\b',
+    r'^(Search|Menu|Home|About|Careers|Terms|Privacy|Cookie|Accessibility)\b',
+    r'\b(TechCrunch|MIT Technology Review|VentureBeat|ChatbotNews)\s*$',
+    r'^(AI News|Artificial intelligence)\s*[\|&].*',
+    r'^AI News &\s*Artificial Intelligence',
+    r'\bSTOCK\s+TRACKER\b',
+    r'\bDISCLAIMER\b',
+    r'^instagram\s+opens',
+    r'^opens in a new window',
+    r'^\S+\s+opens in a new window',
+    r'^(The )?latest iteration of a legacy$',
+    r'^Today.s AI Digest\b',
+    r'^Need to know\b',
+    r'^Choose a tool, not another',
+    r'^Find useful AI tools',
+    r'^What readers are actually',
+    r'^So you.ve heard these AI terms',
+    r'^Laid-off\s+\w+\s+workers',
+    r'^Follow the (frontier|latest)',
+]
+
+SOURCE_DISPLAY_NAMES = {
+    'Hugging Face - Blog': ('Hugging Face 官方博客', 'https://huggingface.co/blog'),
+    'OpenAI News': ('OpenAI 官方博客', 'https://openai.com/news/'),
+    'Anthropic News': ('Anthropic 官方博客', 'https://www.anthropic.com/news'),
+    'DeepMind Blog': ('Google DeepMind 博客', 'https://deepmind.google/discover/blog/'),
+    'venturebeat.com/ai/': ('VentureBeat', 'https://venturebeat.com/ai/'),
+    'https://techcrunch.com/category/artificial-intelligence/': ('TechCrunch', 'https://techcrunch.com/category/artificial-intelligence/'),
+    'https://www.technologyreview.com/topic/artificial-intelligence/': ('MIT Technology Review', 'https://www.technologyreview.com/topic/artificial-intelligence/'),
+    'https://www.chatbotnews.ai/': ('ChatbotNews', 'https://www.chatbotnews.ai/'),
+    'https://ainewshub.io/': ('AI News Hub', 'https://ainewshub.io/'),
+}
+
+# Minimum title length for HTML scraped content (RSS titles can be shorter)
+MIN_HTML_TITLE_LEN = 30
+
+
+def is_noise_title(title, source_type='html'):
+    """Filter out non-article titles (site names, ads, navigation links)"""
+    title = title.strip()
+    min_len = MIN_HTML_TITLE_LEN if source_type == 'html' else 15
+    if len(title) < min_len:
+        return True
+    if title.count(' ') < 2:  # At least 3 words
+        return True
+    for pattern in NOISE_PATTERNS:
+        if re.search(pattern, title, re.IGNORECASE):
+            return True
+    return False
+
 
 def fetch_html_titles(url, max_titles=5):
     """Scrape article titles from HTML pages (fallback when RSS unavailable)"""
@@ -62,29 +116,23 @@ def fetch_html_titles(url, max_titles=5):
     soup = BeautifulSoup(response.text, 'html.parser')
     titles = []
 
-    # Try page title and open graph title first
-    page_title = soup.find('meta', property='og:title') or soup.find('title')
-    if page_title:
-        raw_title = page_title.get('content') if page_title.has_attr('content') else page_title.text
-        if raw_title:
-            titles.append(raw_title.strip())
-
-    # Collect headings
-    for selector in ['article h1', 'article h2', 'article h3', 'h1', 'h2', 'h3']:
+    # Prefer article-specific headings
+    for selector in ['article h2 a', 'article h2', 'article h3 a', 'article h3',
+                     'h2 a[href]', 'h3 a[href]', 'article h1', 'h1 a', 'h2', 'h3']:
         for element in soup.select(selector):
             text = element.get_text(separator=' ', strip=True)
-            if text and len(text) > 15 and text not in titles:
+            if text and not is_noise_title(text, source_type='html') and text not in titles:
                 titles.append(text)
             if len(titles) >= max_titles:
                 break
         if len(titles) >= max_titles:
             break
 
-    # Fallback: collect meaningful link text
+    # Fallback: collect meaningful link text from article containers
     if len(titles) < max_titles:
-        for link in soup.select('a[href]'):
+        for link in soup.select('article a[href], main a[href], .post a[href]'):
             text = link.get_text(separator=' ', strip=True)
-            if text and len(text) > 20 and text not in titles:
+            if text and len(text) > 35 and not is_noise_title(text, source_type='html') and text not in titles:
                 titles.append(text)
             if len(titles) >= max_titles:
                 break
@@ -93,59 +141,80 @@ def fetch_html_titles(url, max_titles=5):
 
 
 def fetch_news_items(rss_urls, html_urls, max_per_source=5, max_total=50):
-    """Fetch news from RSS feeds and HTML pages"""
+    """Fetch news from RSS feeds and HTML pages, return structured items"""
     news_items = []
 
-    # Phase 1: Try RSS feeds
+    # Phase 1: RSS feeds
     for url in rss_urls:
         try:
             feed = feedparser.parse(url)
-            source_title = url
+            source_key = url
             if hasattr(feed, 'feed') and isinstance(feed.feed, dict):
-                source_title = feed.feed.get('title', url) or url
+                source_key = feed.feed.get('title', url) or url
 
             entries = []
             if getattr(feed, 'entries', None):
-                entries = [entry.get('title', '').strip() for entry in feed.entries
-                          if entry.get('title', '').strip()]
+                for entry in feed.entries:
+                    title = entry.get('title', '').strip()
+                    link = entry.get('link', '')
+                    if title and not is_noise_title(title):
+                        entries.append((title, link))
 
-            for title in entries[:max_per_source]:
-                item = f"{title} (via {source_title})"
-                if item not in news_items:
+            for title, link in entries[:max_per_source]:
+                item = format_news_item(title, source_key, link)
+                if item and item not in news_items:
                     news_items.append(item)
                 if len(news_items) >= max_total:
                     break
 
             if entries:
-                print(f"  RSS： {len(entries[:max_per_source])} items from {source_title}")
+                print(f"  RSS：{len(entries[:max_per_source])} 条 来自 {source_key}")
             else:
-                print(f"  RSS：无条目 {url}")
+                print(f"  RSS：无有效条目 {url}")
         except Exception as e:
-            print(f"  RSS 错误： {url} - {e}")
+            print(f"  RSS 错误：{url} - {e}")
 
         if len(news_items) >= max_total:
             break
 
-    # Phase 2: Scrape HTML sources
+    # Phase 2: HTML scraping
     for url in html_urls:
         if len(news_items) >= max_total:
             break
         titles = fetch_html_titles(url, max_per_source)
         for title in titles:
-            item = f"{title} (via {url})"
-            if item not in news_items:
+            item = format_news_item(title, url, url)
+            if item and item not in news_items:
                 news_items.append(item)
             if len(news_items) >= max_total:
                 break
         if titles:
-            print(f"  HTML： {len(titles)} items from {url}")
+            print(f"  HTML：{len(titles)} 条 来自 {url}")
 
     if not news_items:
-        raise RuntimeError(
-            '未从任何来源获取到新闻，请检查网络连接或稍后重试。'
-        )
+        raise RuntimeError('未从任何来源获取到新闻，请检查网络连接或稍后重试。')
 
     return news_items[:max_total]
+
+
+def format_news_item(title, source_key, link=''):
+    """Format a single news item with source info"""
+    # Try exact match first, then substring match
+    display_name = source_key
+    source_url = link or ''
+
+    if source_key in SOURCE_DISPLAY_NAMES:
+        display_name, source_url = SOURCE_DISPLAY_NAMES[source_key]
+    else:
+        # Try matching by URL suffix
+        for key, (name, url) in SOURCE_DISPLAY_NAMES.items():
+            if key in source_key or source_key in key:
+                display_name = name
+                source_url = url
+                break
+
+    source_str = f"[{display_name}]({source_url})" if source_url else display_name
+    return f"{title.strip()} | 来源：{source_str}".strip()
 
 
 def create_report_file(report_date, report_body):

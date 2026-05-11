@@ -88,7 +88,8 @@ class OpenAICompatibleAgent(Agent):
         response = client.chat.completions.create(
             model=self.model,
             messages=messages,
-            temperature=0.7
+            temperature=0.7,
+            max_tokens=4096
         )
         return response.choices[0].message.content
 
@@ -158,11 +159,19 @@ class CollectorAgent:
 
     def execute(self, news_items: List[str]) -> Dict[str, Any]:
         prompt = f"""
-        分析以下 {len(news_items)} 条 AI 行业新闻标题，为每条新闻补充一句简短的中文摘要：
+        你是一位专业的 AI 行业分析师。请仔细阅读以下 {len(news_items)} 条 AI 行业新闻，为每条新闻做详细处理。
 
-        {chr(10).join(f"- {item}" for item in news_items[:15])}
+        {chr(10).join(f"- {item}" for item in news_items[:20])}
 
-        请以 JSON 格式返回：{{"enriched_news": [{{"title": "...", "summary": "..."}}]}}
+        对每条新闻，请完成以下工作：
+        1. 将标题翻译为流畅的中文
+        2. 撰写 2-3 句详细摘要，涵盖：新闻背景、核心要点、行业意义
+        3. 根据内容判断新闻所属领域（大模型技术/产品发布/融资并购/学术研究/行业应用/开源生态/政策监管）
+
+        请以 JSON 格式返回：
+        {{"enriched_news": [{{"title_cn": "中文标题", "title_en": "原始英文标题", "summary": "2-3句详细中文摘要", "domain": "领域"}}]}}
+
+        注意：摘要必须具体、有信息量，不要泛泛而谈。
         """
 
         result = self.agent.execute(prompt)
@@ -181,19 +190,21 @@ class ClassifierAgent:
         previous_context = thinking_logger.get_context()
 
         prompt = f"""
-        基于采集步骤的结果，对以下新闻进行分类与重要性打分（1-10 分）：
+        你是一位 AI 行业资深编辑。基于采集步骤已处理的新闻，请对以下每条新闻进行深度分类和评估：
 
         {collector_output['enriched_result']}
 
         前序推理上下文：
         {previous_context}
 
-        分类维度：
-        1. 重要性（1-10 分）
-        2. 领域分类（大模型/产品发布/融资/学术研究/应用落地）
-        3. 热度（高/中/低）
+        对每条新闻，请给出：
+        1. 重要性评分（1-10 分，基于技术创新度、行业影响力、商业价值综合判断）
+        2. 领域分类（大模型技术/产品发布/融资并购/学术研究/行业应用/开源生态/政策监管）
+        3. 热度评估（高/中/低）
+        4. 一句话说明评分理由
 
-        请以 JSON 格式返回：{{"classified_news": [{{"title": "...", "importance": X, "domain": "...", "heat": "..."}}]}}
+        请以 JSON 格式返回：
+        {{"classified_news": [{{"title": "...", "importance": X, "domain": "...", "heat": "...", "reason": "评分理由"}}]}}
         """
 
         result = self.agent.execute(prompt)
@@ -212,20 +223,37 @@ class AnalystAgent:
         previous_context = thinking_logger.get_context()
 
         prompt = f"""
-        基于已分类的新闻数据，识别当前 AI 行业的主要技术趋势和深度洞察：
+        你是一位顶级 AI 行业分析师。基于已分类的高质量新闻数据，请进行深度趋势分析，挖掘行业信号。
 
         {classifier_output['classified_result']}
 
         推理链上下文：
         {previous_context}
 
-        分析角度：
-        1. 当前主流技术方向及其演进
-        2. 融资热点与创业机会
-        3. 开源生态变化与重要项目
-        4. 市场机遇与潜在风险
+        请从以下四个维度进行深度分析，每个维度至少输出 2 条具体观察（每条 150 字以上）：
 
-        请以中文返回详细趋势分析（5-8 条核心观察）。
+        ## 1. 当前主流技术方向及其演进
+        - 今天出现了哪些值得关注的技术突破或新方法？
+        - 哪些技术路线正在获得更多关注？哪些在降温？
+        - 请结合具体新闻给出你的判断依据。
+
+        ## 2. 融资热点与创业机会
+        - 哪些细分赛道获得了资本重点关注？
+        - 创业公司的产品思路有什么共性或创新点？
+        - 对创业者和投资者有什么启示？
+
+        ## 3. 开源生态变化与重要项目
+        - 开源社区有哪些值得关注的新项目或更新？
+        - 开源与商业方案的竞争格局有何变化？
+        - 对开发者生态有什么影响？
+
+        ## 4. 市场机遇与潜在风险
+        - 哪些方向可能成为下一阶段的增长点？
+        - 存在哪些需要警惕的风险信号？
+        - 对从业者有什么可操作的建议？
+
+        注意：必须基于具体新闻进行分析，每条观点必须有新闻事实支撑。避免空洞的套话和泛泛而谈。
+        请以中文返回详细分析结果。
         """
 
         result = self.agent.execute(prompt)
@@ -244,7 +272,7 @@ class WriterAgent:
         previous_context = thinking_logger.get_context()
 
         prompt = f"""
-        基于前面的分类和分析结果，生成一份结构化的 AI 行业日报（Markdown 格式，全程中文）：
+        你是一位资深的 AI 行业媒体主编。请基于前面的深度分析结果，撰写一份高质量的 AI 行业技术情报日报。
 
         分析结果：
         {analyst_output['analysis_result']}
@@ -252,7 +280,10 @@ class WriterAgent:
         前序推理上下文：
         {previous_context}
 
-        严格按以下结构输出（Markdown 格式）：
+        ---
+        ## 报告要求
+
+        严格按以下结构输出（Markdown 格式，全程中文）。每个章节必须内容充实，拒绝空洞套话。
 
         # AI行业技术情报日报 | {report_date}
 
@@ -261,16 +292,42 @@ class WriterAgent:
         ---
 
         ## 1. 今日AI核心动态（Top 5）
-        [列出 5 条最重要的新闻，每条包含：标题、来源类型、行业意义]
+
+        从新闻中精选 5 条最重要的动态，每条按以下格式详细展开（每条至少 200 字）：
+
+        ### 1.1 [中文标题]
+        - **来源**：[来源名称与链接]
+        - **事件概述**：用 2-3 句话描述发生了什么
+        - **行业意义**：为什么这件事值得关注？它会如何影响行业格局？
+        - **相关背景**：补充必要的背景信息帮助读者理解
+
+        （以此类推，共 5 条）
 
         ## 2. 技术趋势分析
-        [5-8 条趋势观察，每条需要有明确的趋势判断，而非简单新闻列举]
+
+        基于今天的新闻，提炼 5-8 条具体趋势（不是概括，而是有论据支撑的判断）。每条至少 150 字：
+        - **趋势 N**：[一句话趋势判断]
+          - 支撑新闻：[引用具体新闻]
+          - 趋势分析：[展开论述，说明这个趋势的前因后果和未来走向]
 
         ## 3. 值得关注的研究/项目（Top 3）
-        [筛选今日最有价值的论文/产品/融资事件，说明为什么重要及可能影响的方向]
+
+        筛选今天最有价值的 3 个论文/产品/融资事件/开源项目：
+        - **为什么重要**：技术突破性在哪？或商业价值多大？
+        - **可能影响的方向**：会影响哪些领域？
+        - **建议关注人群**：研究者/开发者/创业者/投资者
 
         ## 4. 行业观察结论
-        [总结当前行业阶段、加速方向、潜在机遇与风险]
+
+        总结当前 AI 行业所处阶段，指出：
+        - 正在加速的方向（2-3 个）
+        - 正在降温的方向（1-2 个）
+        - 下一步可能爆发的领域（1-2 个具体判断）
+        - 对从业者的建议（至少 2 条可操作建议）
+
+        ---
+        注意：全文必须基于今天的具体新闻，不要写泛泛而谈的套话。每个结论都要有新闻事实支撑。
+        如果内容长度不足，请补充更多的背景分析、数据或行业对比。
         """
 
         result = self.agent.execute(prompt)
@@ -289,11 +346,7 @@ class ReviewerAgent:
         previous_context = thinking_logger.get_context()
 
         prompt = f"""
-        请审核以下 AI 行业日报的质量，检查是否满足以下标准：
-        1. 是否包含具体的数据或案例？
-        2. 是否有明确的趋势判断（而非简单列举）？
-        3. 是否覆盖了大模型/产品/融资/学术等主要维度？
-        4. 是否有可操作的行业洞察？
+        你是 AI 行业日报的最终审稿人。请严格审核以下报告，确保质量达到专业媒体水准：
 
         原始报告：
         {writer_output['report_markdown']}
@@ -301,10 +354,20 @@ class ReviewerAgent:
         推理链摘要：
         {previous_context}
 
-        如果报告质量需要改进，请指出具体问题并建议修改方案。
-        如果报告质量良好，直接返回优化后的最终版本。
+        审核清单（逐项检查）：
+        1. 每条核心动态是否包含：具体事件描述、行业意义、相关背景？信息密度是否足够？
+        2. 技术趋势分析是否有明确的趋势判断（而非简单新闻罗列）？是否有具体论据支撑？
+        3. 是否覆盖了大模型/产品/融资/学术/开源/应用等主要维度？
+        4. 行业观察是否有可操作的洞察和建议（而非泛泛总结）？
+        5. 全文长度是否充实？如果某章节内容偏短，请补充扩展。
 
-        最后返回最终版本报告（中文 Markdown）。
+        修改原则：
+        - 如果报告质量良好但某些部分不够深入，请在保留原有结构的基础上补充扩展
+        - 如果存在明显遗漏（如某条重要新闻未被覆盖），请补充
+        - 如果内容空洞、套话过多，请重写相关段落，注入具体信息和判断
+        - 保持中文表达的专业性和可读性
+
+        最终输出完整的、经过审核优化的最终版本报告（中文 Markdown）。
         """
 
         result = self.agent.execute(prompt)
@@ -321,6 +384,138 @@ AGENT_FACTORIES = {
     'mistral': create_mistral_agent,
     'siliconflow': create_siliconflow_agent,
 }
+
+
+def _build_degraded_report(news_items, report_date):
+    """Build a structured Chinese report from raw news items without LLM assistance."""
+    import re
+
+    # Parse items into (title, source) pairs
+    parsed = []
+    for item in news_items[:30]:
+        # Parse: "Title | 来源：[Name](url) (link)"
+        title_part = item
+        source_name = ""
+        source_url = ""
+
+        # Try to extract source info from the new format
+        source_match = re.search(r'\|\s*来源：\[([^\]]+)\]\(([^)]+)\)', item)
+        if source_match:
+            title_part = item[:source_match.start()].strip()
+            source_name = source_match.group(1)
+            source_url = source_match.group(2)
+        elif ' (via ' in item:
+            title_part = item.split(' (via ')[0]
+            source_name = item.split('(via ')[1].rstrip(')')
+        parsed.append({
+            'title': title_part,
+            'source_name': source_name,
+            'source_url': source_url,
+        })
+
+    # Group by source
+    from collections import defaultdict
+    by_source = defaultdict(list)
+    for p in parsed:
+        by_source[p['source_name'] or '其他来源'].append(p)
+
+    # Build sections
+    # Section 1: Top 5
+    top5_lines = []
+    for i, p in enumerate(parsed[:5], 1):
+        src = f"[{p['source_name']}]({p['source_url']})" if p['source_url'] else p['source_name']
+        top5_lines.append(f"{i}. **{p['title']}**\n   - 来源：{src}")
+    top5_section = "\n\n".join(top5_lines)
+
+    # Section 2: All items by source
+    by_source_lines = []
+    for source, items in by_source.items():
+        by_source_lines.append(f"### {source}（{len(items)} 条）")
+        for item in items:
+            by_source_lines.append(f"- {item['title']}")
+    by_source_section = "\n\n".join(by_source_lines)
+
+    # Section 3: Full list
+    full_list = "\n".join(
+        f"{i+1}. {p['title']}  "
+        f"{'([' + p['source_name'] + '](' + p['source_url'] + '))' if p['source_url'] else ''}"
+        for i, p in enumerate(parsed)
+    )
+
+    # Detect topic keywords for rough categorization
+    keywords_map = {
+        '大模型与训练': ['LLM', 'GPT', 'Claude', 'Gemini', 'Llama', 'model', 'training', 'pretraining', 'RL', 'MoE', 'mixture of experts', '大模型', '预训练', '微调'],
+        'AI Agent 与系统': ['Agent', 'agentic', 'Multi-Agent', 'tool', 'orchestration', '工作流', '自动化'],
+        '开源与工具': ['Open', 'open source', 'GitHub', 'Hugging Face', 'vLLM', '开源', '框架', '工具'],
+        'AI 产品与商业化': ['product', 'enterprise', 'scaling', 'customer', 'Parloa', '企业', '产品', '服务'],
+        '基础设施与算力': ['GPU', 'AMD', 'MI300X', 'infrastructure', 'Cloud', '算力', '数据中心', '部署'],
+    }
+    topic_counts = {k: 0 for k in keywords_map}
+    for p in parsed:
+        title_lower = p['title'].lower()
+        for topic, kws in keywords_map.items():
+            if any(kw.lower() in title_lower for kw in kws):
+                topic_counts[topic] += 1
+
+    topic_lines = []
+    for topic, count in sorted(topic_counts.items(), key=lambda x: -x[1]):
+        if count > 0:
+            topic_lines.append(f"- **{topic}**：{count} 条相关新闻")
+    topic_section = "\n".join(topic_lines) if topic_lines else "今日新闻覆盖多个 AI 细分领域。"
+
+    return f"""# AI行业技术情报日报 | {report_date}
+
+**日期：{report_date}**
+
+---
+
+## 1. 今日AI核心动态（Top 5）
+
+{top5_section}
+
+---
+
+## 2. 技术趋势分析
+
+> **注意**：当前为降级运行模式，以下趋势方向基于关键词自动识别，仅供参考。深度分析需启用 LLM Agent。
+
+本日采集覆盖的主要技术方向：
+
+{topic_section}
+
+---
+
+## 3. 按来源分类的新闻汇总
+
+{by_source_section}
+
+---
+
+## 4. 今日采集全部新闻标题
+
+{full_list}
+
+---
+
+## 5. 行业观察说明
+
+本报告当前处于**降级运行模式**，已完成新闻采集、聚合与初步分类，但未进行 AI 驱动的深度分析。
+
+如需获取包含以下内容的完整版 AI 行业技术情报日报：
+- 每条新闻的深度解读与行业影响分析
+- 具体的技术趋势判断（有论据支撑）
+- 投资与创业方向建议
+- 值得关注的论文/项目/产品推荐
+
+请配置 LLM API 密钥：
+1. 本地运行：将 `.env.example` 复制为 `.env` 并填入至少一个 API 密钥
+2. GitHub Actions：在仓库 Settings > Secrets 中配置相应的 API 密钥
+
+---
+
+> *本报告由 AI Research Agent 自动生成于 {report_date}*
+> *共采集 {len(news_items)} 条新闻，覆盖 {len(by_source)} 个来源*
+"""
 
 
 class Orchestrator:
@@ -407,46 +602,7 @@ class Orchestrator:
             writer_output = self.agents['writer'].execute(analyst_output, report_date)
         else:
             print("降级模式：基于新闻标题生成中文结构化基础报告")
-            raw_items = news_items[:20]
-            news_list = "\n".join(
-                f"{i+1}. {item}" for i, item in enumerate(raw_items)
-            )
-            degraded_report = f"""# AI行业技术情报日报 | {report_date}
-
----
-
-## 1. 今日AI核心动态（Top 5）
-
-{chr(10).join(f"{i+1}. {item.split(' (via ')[0] if ' (via ' in item else item}{'  [' + item.split('(via ')[1].rstrip(')') + ']' if '(via ' in item else ''}" for i, item in enumerate(raw_items[:5]))}
-
----
-
-## 2. 技术趋势分析
-
-本日采集覆盖了以下主要方向的技术动态，包括但不限于：大模型训练与推理基础设施、AI Agent 与多智能体系统、开源模型生态演进、AI 产品化与商业化落地、学术前沿研究等。
-
-> **注意**：趋势深度分析需启用 LLM Agent。当前为基础新闻采集模式，下文列出全部采集到的新闻标题供参考。
-
----
-
-## 3. 今日采集全部新闻标题
-
-{news_list}
-
----
-
-## 4. 行业观察说明
-
-本报告当前处于**降级运行模式**，仅完成新闻采集与聚合，未进行 AI 驱动的深度分析。
-
-如需获取包含**趋势判断、技术洞察与投资方向建议**的完整版 AI 行业技术情报日报，请：
-1. 将 `.env.example` 复制为 `.env` 并填入至少一个 LLM 提供商的 API 密钥
-2. 或在 GitHub Actions Secrets 中配置相应的 API 密钥
-
----
-
-> *本报告由 AI Research Agent 自动生成于 {report_date}*
-"""
+            degraded_report = _build_degraded_report(news_items, report_date)
             writer_output = {"analyst_output": analyst_output, "report_markdown": degraded_report}
 
         # Step 5: Reviewer
