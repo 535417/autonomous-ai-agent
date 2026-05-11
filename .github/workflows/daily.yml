@@ -34,7 +34,16 @@ jobs:
           GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
-        run: python main.py
+        run: |
+          # 诊断：检查密钥是否传入（不暴露密钥值）
+          for key in DEEPSEEK_API_KEY GLM_API_KEY GROQ_API_KEY SILICONFLOW_API_KEY; do
+            if [ -n "${!key}" ]; then
+              echo "[CI诊断] $key 已设置 (长度: ${#!key})"
+            else
+              echo "[CI诊断] $key 未设置或为空"
+            fi
+          done
+          python main.py
       - name: Send Email Report
         env:
           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
