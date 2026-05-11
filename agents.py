@@ -106,7 +106,7 @@ def create_deepseek_agent(name: str = "DeepSeekAgent") -> Optional[OpenAICompati
     load_dotenv()
     api_key = os.getenv('DEEPSEEK_API_KEY')
     if not api_key:
-        print(f"Warning: DEEPSEEK_API_KEY not found, {name} will be skipped")
+        print(f"警告：DEEPSEEK_API_KEY 未找到，{name} 将被跳过")
         return None
     return OpenAICompatibleAgent(name, "deepseek-chat", api_key, "https://api.deepseek.com/v1")
 
@@ -115,7 +115,7 @@ def create_glm_agent(name: str = "GLMAgent") -> Optional[OpenAICompatibleAgent]:
     load_dotenv()
     api_key = os.getenv('GLM_API_KEY')
     if not api_key:
-        print(f"Warning: GLM_API_KEY not found, {name} will be skipped")
+        print(f"警告：GLM_API_KEY 未找到，{name} 将被跳过")
         return None
     return OpenAICompatibleAgent(name, "glm-4", api_key, "https://open.bigmodel.cn/api/paas/v4")
 
@@ -124,7 +124,7 @@ def create_groq_agent(name: str = "GroqAgent") -> Optional[OpenAICompatibleAgent
     load_dotenv()
     api_key = os.getenv('GROQ_API_KEY')
     if not api_key:
-        print(f"Warning: GROQ_API_KEY not found, {name} will be skipped")
+        print(f"警告：GROQ_API_KEY 未找到，{name} 将被跳过")
         return None
     return OpenAICompatibleAgent(name, "mixtral-8x7b-32768", api_key, "https://api.groq.com/openai/v1")
 
@@ -133,7 +133,7 @@ def create_mistral_agent(name: str = "MistralAgent") -> Optional[OpenAICompatibl
     load_dotenv()
     api_key = os.getenv('MISTRAL_API_KEY')
     if not api_key:
-        print(f"Warning: MISTRAL_API_KEY not found, {name} will be skipped")
+        print(f"警告：MISTRAL_API_KEY 未找到，{name} 将被跳过")
         return None
     return OpenAICompatibleAgent(name, "mistral-large-latest", api_key, "https://api.mistral.ai/v1")
 
@@ -142,7 +142,7 @@ def create_siliconflow_agent(name: str = "SiliconFlowAgent") -> Optional[OpenAIC
     load_dotenv()
     api_key = os.getenv('SILICONFLOW_API_KEY')
     if not api_key:
-        print(f"Warning: SILICONFLOW_API_KEY not found, {name} will be skipped")
+        print(f"警告：SILICONFLOW_API_KEY 未找到，{name} 将被跳过")
         return None
     return OpenAICompatibleAgent(name, "Qwen2-72B-Instruct", api_key, "https://api.siliconflow.cn/v1")
 
@@ -158,15 +158,15 @@ class CollectorAgent:
 
     def execute(self, news_items: List[str]) -> Dict[str, Any]:
         prompt = f"""
-        Analyze the following {len(news_items)} AI industry news titles, add a one-sentence summary for each:
+        分析以下 {len(news_items)} 条 AI 行业新闻标题，为每条新闻补充一句简短的中文摘要：
 
         {chr(10).join(f"- {item}" for item in news_items[:15])}
 
-        Return JSON format: {{"enriched_news": [{{title: "...", summary: "..."}}]}}
+        请以 JSON 格式返回：{{"enriched_news": [{{"title": "...", "summary": "..."}}]}}
         """
 
         result = self.agent.execute(prompt)
-        thinking_logger.log(self.name, news_items, result, "Collected and summarized news items")
+        thinking_logger.log(self.name, news_items, result, "已采集并初步总结新闻内容")
         return {"raw_news": news_items, "enriched_result": result}
 
 
@@ -181,23 +181,23 @@ class ClassifierAgent:
         previous_context = thinking_logger.get_context()
 
         prompt = f"""
-        Based on the collector step results, classify the following news (importance score 1-10):
+        基于采集步骤的结果，对以下新闻进行分类与重要性打分（1-10 分）：
 
         {collector_output['enriched_result']}
 
-        Previous context:
+        前序推理上下文：
         {previous_context}
 
-        Classification dimensions:
-        1. Importance (1-10)
-        2. Domain (Model/Product/Funding/Academic/Application)
-        3. Heat (High/Medium/Low)
+        分类维度：
+        1. 重要性（1-10 分）
+        2. 领域分类（大模型/产品发布/融资/学术研究/应用落地）
+        3. 热度（高/中/低）
 
-        Return JSON format: {{"classified_news": [{{title: "...", importance: X, domain: "...", heat: "..."}}]}}
+        请以 JSON 格式返回：{{"classified_news": [{{"title": "...", "importance": X, "domain": "...", "heat": "..."}}]}}
         """
 
         result = self.agent.execute(prompt)
-        thinking_logger.log(self.name, collector_output, result, "Completed news classification and scoring")
+        thinking_logger.log(self.name, collector_output, result, "已完成新闻分类和评分")
         return {"collector_output": collector_output, "classified_result": result}
 
 
@@ -212,24 +212,24 @@ class AnalystAgent:
         previous_context = thinking_logger.get_context()
 
         prompt = f"""
-        Based on the classified news data, identify key technology trends and industry insights:
+        基于已分类的新闻数据，识别当前 AI 行业的主要技术趋势和深度洞察：
 
         {classifier_output['classified_result']}
 
-        Chain-of-thought context:
+        推理链上下文：
         {previous_context}
 
-        Analysis angles:
-        1. Current mainstream technology directions
-        2. Funding hotspots and startup trends
-        3. Open-source ecosystem evolution
-        4. Potential market opportunities
+        分析角度：
+        1. 当前主流技术方向及其演进
+        2. 融资热点与创业机会
+        3. 开源生态变化与重要项目
+        4. 市场机遇与潜在风险
 
-        Return detailed trend analysis in Chinese (5-8 key observations)
+        请以中文返回详细趋势分析（5-8 条核心观察）。
         """
 
         result = self.agent.execute(prompt)
-        thinking_logger.log(self.name, classifier_output, result, "Completed deep trend analysis")
+        thinking_logger.log(self.name, classifier_output, result, "已完成深度趋势分析")
         return {"classifier_output": classifier_output, "analysis_result": result}
 
 
@@ -244,32 +244,32 @@ class WriterAgent:
         previous_context = thinking_logger.get_context()
 
         prompt = f"""
-        Based on the classification and analysis results, generate a structured AI industry daily report (Markdown):
+        基于前面的分类和分析结果，生成一份结构化的 AI 行业日报（Markdown 格式，全程中文）：
 
-        Analysis results:
+        分析结果：
         {analyst_output['analysis_result']}
 
-        Previous context:
+        前序推理上下文：
         {previous_context}
 
-        Report structure (Markdown format):
-        # AI Research Report - {report_date}
+        报告结构（Markdown 格式）：
+        # AI 行业日报 - {report_date}
 
-        ## Today's Core Developments (Top 5)
-        [List 5 most important news + source + significance]
+        ## 今日核心动态（Top 5）
+        [列出 5 条最重要的新闻 + 来源 + 行业意义]
 
-        ## Technology Trend Analysis
-        [Expand 5-8 trend observations based on analysis results]
+        ## 技术趋势分析
+        [基于分析结果展开 5-8 条趋势观察，每一条需要有具体判断而非泛泛列举]
 
-        ## Projects Worth Watching (Top 3)
-        [Filter most valuable papers/products/funding events]
+        ## 值得关注的项目（Top 3）
+        [筛选今日最有价值的论文/产品/融资事件，说明为什么重要]
 
-        ## Industry Observations & Conclusions
-        [Summarize current phase, acceleration directions, potential opportunities]
+        ## 行业观察结论
+        [总结当前行业阶段、加速方向、潜在机遇]
         """
 
         result = self.agent.execute(prompt)
-        thinking_logger.log(self.name, analyst_output, result, "Generated structured report")
+        thinking_logger.log(self.name, analyst_output, result, "已生成结构化报告")
         return {"analyst_output": analyst_output, "report_markdown": result}
 
 
@@ -284,26 +284,26 @@ class ReviewerAgent:
         previous_context = thinking_logger.get_context()
 
         prompt = f"""
-        Review the quality of the following AI industry daily report, check for these issues:
-        1. Does it include specific data/cases?
-        2. Are there clear trend judgments (not just simple lists)?
-        3. Does it cover major dimensions like Model/Product/Funding/Academic?
-        4. Are there actionable industry insights?
+        请审核以下 AI 行业日报的质量，检查是否满足以下标准：
+        1. 是否包含具体的数据或案例？
+        2. 是否有明确的趋势判断（而非简单列举）？
+        3. 是否覆盖了大模型/产品/融资/学术等主要维度？
+        4. 是否有可操作的行业洞察？
 
-        Original report:
+        原始报告：
         {writer_output['report_markdown']}
 
-        Chain summary:
+        推理链摘要：
         {previous_context}
 
-        If the report quality needs improvement, point out specific issues and suggest improvements.
-        If the report quality is good, return the improved final version directly.
+        如果报告质量需要改进，请指出具体问题并建议修改方案。
+        如果报告质量良好，直接返回优化后的最终版本。
 
-        Finally return the final version report (Markdown).
+        最后返回最终版本报告（中文 Markdown）。
         """
 
         result = self.agent.execute(prompt)
-        thinking_logger.log(self.name, writer_output, result, "Completed quality review and final optimization")
+        thinking_logger.log(self.name, writer_output, result, "已完成质量审核和最终优化")
         return result
 
 
@@ -339,10 +339,10 @@ class Orchestrator:
 
         available = [k for k, v in self.agents.items() if v is not None]
         if not available:
-            print("WARNING: No LLM agents available. Running in fully degraded mode.")
-            print("To enable AI-powered reports, copy .env.example to .env and set at least one API key.")
+            print("警告：无可用 LLM Agent，将在完全降级模式下运行。")
+            print("如需启用 AI 驱动报告，请在 .env 或 GitHub Secrets 中配置至少一个 API 密钥。")
         else:
-            print(f"Initialized agents: {available}")
+            print(f"已初始化的 Agent：{available}")
 
     def _try_create_agent(self, role: str, provider_order: List[str]):
         """Try to create an agent for a role, falling back through the provider list"""
@@ -363,69 +363,69 @@ class Orchestrator:
             if agent is not None:
                 return pipeline_cls(agent)
 
-        print(f"Warning: No API key available for {role} agent, it will use degraded mode")
+        print(f"警告：{role} Agent 无可用 API 密钥，将使用降级模式")
         return None
 
     def run(self, news_items: List[str], report_date: str) -> str:
         """Execute the complete 5-agent collaboration workflow"""
         print(f"\n{'='*60}")
-        print("Starting Multi-Agent Collaboration Workflow")
+        print("启动多 Agent 协作流程")
         print(f"{'='*60}\n")
 
         # Step 1: Collector
-        print("[Step 1/5] Collector processing...")
+        print("[步骤 1/5] 采集器处理中...")
         if self.agents['collector']:
             collector_output = self.agents['collector'].execute(news_items)
         else:
-            print("Degraded mode: skipping collector, using raw news")
+            print("降级模式：跳过采集器，使用原始新闻")
             collector_output = {"raw_news": news_items, "enriched_result": "\n".join(news_items)}
 
         # Step 2: Classifier
-        print("[Step 2/5] Classifier processing...")
+        print("[步骤 2/5] 分类器处理中...")
         if self.agents['classifier']:
             classifier_output = self.agents['classifier'].execute(collector_output)
         else:
-            print("Degraded mode: skipping classifier")
-            classifier_output = {"collector_output": collector_output, "classified_result": "Classification unavailable"}
+            print("降级模式：跳过分类器")
+            classifier_output = {"collector_output": collector_output, "classified_result": "新闻分类功能不可用"}
 
         # Step 3: Analyst
-        print("[Step 3/5] Analyst processing...")
+        print("[步骤 3/5] 分析师处理中...")
         if self.agents['analyst']:
             analyst_output = self.agents['analyst'].execute(classifier_output)
         else:
-            print("Degraded mode: skipping analyst")
-            analyst_output = {"classifier_output": classifier_output, "analysis_result": "Trend analysis unavailable"}
+            print("降级模式：跳过分析师")
+            analyst_output = {"classifier_output": classifier_output, "analysis_result": "趋势分析功能不可用"}
 
         # Step 4: Writer
-        print("[Step 4/5] Writer processing...")
+        print("[步骤 4/5] 撰写师处理中...")
         if self.agents['writer']:
             writer_output = self.agents['writer'].execute(analyst_output, report_date)
         else:
-            print("Degraded mode: generating basic report from news headlines")
+            print("降级模式：基于新闻标题生成基础报告")
             # Generate a basic report from raw news items
             raw_items = news_items[:20]
             news_list = "\n".join(f"- {item}" for item in raw_items)
-            degraded_report = f"""# AI Research Report - {report_date}
+            degraded_report = f"""# AI 行业日报 - {report_date}
 
-## Collected News Headlines
+## 今日采集新闻标题
 
 {news_list}
 
 ---
-*Note: This is a basic report generated without LLM agents. Configure API keys in .env for AI-powered analysis.*
+*注：本报告为未启用 LLM Agent 的基础版本（可能原因：API 密钥未配置）。请在 GitHub Secrets 中配置至少一个 API 密钥以获得 AI 驱动的完整分析报告。*
 """
             writer_output = {"analyst_output": analyst_output, "report_markdown": degraded_report}
 
         # Step 5: Reviewer
-        print("[Step 5/5] Reviewer processing...")
+        print("[步骤 5/5] 评审师处理中...")
         if self.agents['reviewer']:
             final_report = self.agents['reviewer'].execute(writer_output)
         else:
-            print("Degraded mode: skipping reviewer")
+            print("降级模式：跳过评审师")
             final_report = writer_output['report_markdown']
 
         print(f"\n{'='*60}")
-        print("Multi-Agent Collaboration Workflow Complete!")
+        print("多 Agent 协作流程完成！")
         print(f"{'='*60}\n")
 
         # Export chain-of-thought log

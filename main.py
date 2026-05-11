@@ -56,7 +56,7 @@ def fetch_html_titles(url, max_titles=5):
         )
         response.raise_for_status()
     except requests.RequestException as e:
-        print(f"  WARNING: Failed to fetch {url}: {e}")
+        print(f"  警告：抓取失败 {url}：{e}")
         return []
 
     soup = BeautifulSoup(response.text, 'html.parser')
@@ -117,11 +117,11 @@ def fetch_news_items(rss_urls, html_urls, max_per_source=5, max_total=50):
                     break
 
             if entries:
-                print(f"  RSS: {len(entries[:max_per_source])} items from {source_title}")
+                print(f"  RSS： {len(entries[:max_per_source])} items from {source_title}")
             else:
-                print(f"  RSS: No entries from {url}")
+                print(f"  RSS：无条目 {url}")
         except Exception as e:
-            print(f"  RSS ERROR: {url} - {e}")
+            print(f"  RSS 错误： {url} - {e}")
 
         if len(news_items) >= max_total:
             break
@@ -138,12 +138,11 @@ def fetch_news_items(rss_urls, html_urls, max_per_source=5, max_total=50):
             if len(news_items) >= max_total:
                 break
         if titles:
-            print(f"  HTML: {len(titles)} items from {url}")
+            print(f"  HTML： {len(titles)} items from {url}")
 
     if not news_items:
         raise RuntimeError(
-            'No news items fetched from any source. Please check your network connection '
-            'or try again later.'
+            '未从任何来源获取到新闻，请检查网络连接或稍后重试。'
         )
 
     return news_items[:max_total]
@@ -155,7 +154,7 @@ def create_report_file(report_date, report_body):
     os.makedirs('logs', exist_ok=True)
 
     filename = os.path.join(REPORT_PATH, f'{report_date}.md')
-    header = f"# AI Research Report - {report_date}\n\n**Report Date:** {report_date}\n\n"
+    header = f"# AI 行业日报 - {report_date}\n\n**报告日期：** {report_date}\n\n"
 
     with open(filename, 'w', encoding='utf-8') as f:
         f.write(header + report_body)
@@ -167,10 +166,11 @@ def check_env():
     """Check if .env file exists and has at least one API key configured"""
     if not os.path.exists('.env'):
         print("=" * 70)
-        print("WARNING: .env file not found!")
-        print("The program needs at least one LLM API key to function.")
-        print("Please copy .env.example to .env and fill in your API keys:")
+        print("警告：未找到 .env 文件！")
+        print("本程序至少需要一个 LLM API 密钥才能运行。")
+        print("请复制 .env.example 到 .env 并填写你的 API 密钥：")
         print("  cp .env.example .env")
+        print("（GitHub Actions 中请直接配置 Secrets，无需 .env 文件）")
         print("=" * 70)
         print()
         return False
@@ -185,32 +185,32 @@ def main():
     report_date = datetime.now(TZ).strftime('%Y-%m-%d')
 
     print(f"\n{'='*70}")
-    print(f"AI Research Digest Agent - Multi-Agent Collaboration")
-    print(f"Report Date: {report_date_display}")
+    print(f"AI Research Digest Agent - 多 Agent 协作模式")
+    print(f"报告日期：{report_date_display}")
     print(f"{'='*70}\n")
 
     # Phase 1: Collect news
-    print("[Phase 1/2] Fetching news sources...")
+    print("[阶段 1/2] 抓取新闻源中...")
     try:
         news_items = fetch_news_items(RSS_SOURCES, HTML_SOURCES)
-        print(f"[OK] Successfully collected {len(news_items)} news items\n")
+        print(f"[完成] 成功采集 {len(news_items)} 条新闻\n")
     except Exception as e:
-        print(f"[ERROR] News collection failed: {e}")
+        print(f"[错误] 新闻采集失败：{e}")
         return
 
     # Phase 2: Multi-Agent Collaboration
-    print("[Phase 2/2] Starting multi-agent collaboration system...")
+    print("[阶段 2/2] 启动多 Agent 协作系统...")
     try:
         orchestrator = Orchestrator()
         final_report = orchestrator.run(news_items, report_date)
 
         # Save report
         filename = create_report_file(report_date, final_report)
-        print(f"\n[OK] Report saved: {filename}")
-        print(f"[OK] Chain-of-thought log saved: logs/thinking_chain_{report_date}.json")
+        print(f"\n[完成] 报告已保存：{filename}")
+        print(f"[完成] 推理链日志已保存：logs/thinking_chain_{report_date}.json")
 
     except Exception as e:
-        print(f"[ERROR] Report generation failed: {e}")
+        print(f"[错误] 报告生成失败：{e}")
         import traceback
         traceback.print_exc()
 
