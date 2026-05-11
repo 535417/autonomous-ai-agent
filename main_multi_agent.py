@@ -1,9 +1,15 @@
 """
-AI Research Digest Agent - 主程序
-集成多 Agent 协作系统，支持 5 个不同的 LLM 提供商
+AI Research Digest Agent - Main Program
+Integrates multi-agent collaboration system with 5 different LLM providers
 """
 
 import os
+import sys
+
+# Fix Windows GBK encoding issue - force UTF-8 output
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -16,58 +22,65 @@ from agents import Orchestrator, thinking_logger
 
 TZ = ZoneInfo('Asia/Shanghai')
 
-RSS_URLS = [
-    'https://www.chatbotnews.ai/',
-    'https://www.the500feed.com/',
-    'https://ainewshub.io/',
+# News sources: RSS feed URLs and HTML fallback URLs
+RSS_SOURCES = [
+    'https://huggingface.co/blog/feed.xml',
+    'https://openai.com/news/rss.xml',
+    'https://www.anthropic.com/news/feed.xml',
+    'https://deepmind.google/discover/blog/feed.xml',
+]
+
+HTML_SOURCES = [
     'https://venturebeat.com/ai/',
     'https://techcrunch.com/category/artificial-intelligence/',
     'https://www.technologyreview.com/topic/artificial-intelligence/',
-    'https://huggingface.co/blog',
-    'https://openai.com/news/',
-    'https://www.anthropic.com/news',
-    'https://deepmind.google/discover/blog/'
+    'https://www.chatbotnews.ai/',
+    'https://ainewshub.io/',
 ]
 
 REPORT_PATH = 'reports'
 
 
-def fetch_html_titles(url, max_titles=3):
+def fetch_html_titles(url, max_titles=5):
+    """Scrape article titles from HTML pages (fallback when RSS unavailable)"""
     try:
         response = requests.get(
             url,
-            timeout=12,
+            timeout=15,
             headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                              '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+                'User-Agent': (
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                    '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+                )
             }
         )
         response.raise_for_status()
-    except requests.RequestException:
+    except requests.RequestException as e:
+        print(f"  WARNING: Failed to fetch {url}: {e}")
         return []
 
     soup = BeautifulSoup(response.text, 'html.parser')
     titles = []
 
-    # Try page title and open graph title
-    page_title = (soup.find('meta', property='og:title') or soup.find('title'))
+    # Try page title and open graph title first
+    page_title = soup.find('meta', property='og:title') or soup.find('title')
     if page_title:
         raw_title = page_title.get('content') if page_title.has_attr('content') else page_title.text
         if raw_title:
             titles.append(raw_title.strip())
 
-    # Collect headings from the page
+    # Collect headings
     for selector in ['article h1', 'article h2', 'article h3', 'h1', 'h2', 'h3']:
         for element in soup.select(selector):
             text = element.get_text(separator=' ', strip=True)
-            if text and text not in titles:
+            if text and len(text) > 15 and text not in titles:
                 titles.append(text)
             if len(titles) >= max_titles:
                 break
         if len(titles) >= max_titles:
             break
 
-    # Fallback: collect meaningful links with text
+    # Fallback: collect meaningful link text
     if len(titles) < max_titles:
         for link in soup.select('a[href]'):
             text = link.get_text(separator=' ', strip=True)
@@ -79,89 +92,127 @@ def fetch_html_titles(url, max_titles=3):
     return titles[:max_titles]
 
 
-def fetch_news_items(urls, max_per_source=5, max_total=50):
-    """获取新闻（支持 RSS 和 HTML 解析双链路）"""
+def fetch_news_items(rss_urls, html_urls, max_per_source=5, max_total=50):
+    """Fetch news from RSS feeds and HTML pages"""
     news_items = []
-    
-    for url in urls:
-        feed = feedparser.parse(url)
-        source_title = url
-        
-        if hasattr(feed, 'feed') and isinstance(feed.feed, dict):
-            source_title = feed.feed.get('title', url) or url
 
-        entries = []
-        if getattr(feed, 'entries', None):
-            entries = [entry.get('title', '').strip() for entry in feed.entries 
-                      if entry.get('title', '').strip()]
+    # Phase 1: Try RSS feeds
+    for url in rss_urls:
+        try:
+            feed = feedparser.parse(url)
+            source_title = url
+            if hasattr(feed, 'feed') and isinstance(feed.feed, dict):
+                source_title = feed.feed.get('title', url) or url
 
-        if not entries:
-            entries = fetch_html_titles(url, max_per_source)
+            entries = []
+            if getattr(feed, 'entries', None):
+                entries = [entry.get('title', '').strip() for entry in feed.entries
+                          if entry.get('title', '').strip()]
 
-        for title in entries[:max_per_source]:
-            item = f"{title} ({source_title})"
+            for title in entries[:max_per_source]:
+                item = f"{title} (via {source_title})"
+                if item not in news_items:
+                    news_items.append(item)
+                if len(news_items) >= max_total:
+                    break
+
+            if entries:
+                print(f"  RSS: {len(entries[:max_per_source])} items from {source_title}")
+            else:
+                print(f"  RSS: No entries from {url}")
+        except Exception as e:
+            print(f"  RSS ERROR: {url} - {e}")
+
+        if len(news_items) >= max_total:
+            break
+
+    # Phase 2: Scrape HTML sources
+    for url in html_urls:
+        if len(news_items) >= max_total:
+            break
+        titles = fetch_html_titles(url, max_per_source)
+        for title in titles:
+            item = f"{title} (via {url})"
             if item not in news_items:
                 news_items.append(item)
             if len(news_items) >= max_total:
                 break
-        
-        if len(news_items) >= max_total:
-            break
+        if titles:
+            print(f"  HTML: {len(titles)} items from {url}")
 
     if not news_items:
-        raise RuntimeError('未从配置的数据源中获取到任何新闻，请检查信息源是否可用。')
-    
+        raise RuntimeError(
+            'No news items fetched from any source. Please check your network connection '
+            'or try again later.'
+        )
+
     return news_items[:max_total]
 
 
 def create_report_file(report_date, report_body):
-    """保存报告到本地"""
+    """Save report to local file"""
     os.makedirs(REPORT_PATH, exist_ok=True)
     os.makedirs('logs', exist_ok=True)
-    
+
     filename = os.path.join(REPORT_PATH, f'{report_date}.md')
-    header = f"# AI Research Report - {report_date}\n\n**报告日期：** {report_date}\n\n"
-    
+    header = f"# AI Research Report - {report_date}\n\n**Report Date:** {report_date}\n\n"
+
     with open(filename, 'w', encoding='utf-8') as f:
         f.write(header + report_body)
-    
+
     return filename
+
+
+def check_env():
+    """Check if .env file exists and has at least one API key configured"""
+    if not os.path.exists('.env'):
+        print("=" * 70)
+        print("WARNING: .env file not found!")
+        print("The program needs at least one LLM API key to function.")
+        print("Please copy .env.example to .env and fill in your API keys:")
+        print("  cp .env.example .env")
+        print("=" * 70)
+        print()
+        return False
+    return True
 
 
 def main():
     load_dotenv()
-    
-    report_date_display = datetime.now(TZ).strftime('%Y年%m月%d日')
+    check_env()
+
+    report_date_display = datetime.now(TZ).strftime('%Y-%m-%d')
     report_date = datetime.now(TZ).strftime('%Y-%m-%d')
 
     print(f"\n{'='*70}")
-    print(f"AI Research Digest Agent - 多 Agent 协作版本")
-    print(f"报告日期：{report_date_display}")
+    print(f"AI Research Digest Agent - Multi-Agent Collaboration")
+    print(f"Report Date: {report_date_display}")
     print(f"{'='*70}\n")
 
-    # 第一阶段：采集新闻
-    print("[阶段 1/2] 采集新闻源中...")
+    # Phase 1: Collect news
+    print("[Phase 1/2] Fetching news sources...")
     try:
-        news_items = fetch_news_items(RSS_URLS)
-        print(f"✓ 成功采集 {len(news_items)} 条新闻")
+        news_items = fetch_news_items(RSS_SOURCES, HTML_SOURCES)
+        print(f"[OK] Successfully collected {len(news_items)} news items\n")
     except Exception as e:
-        print(f"✗ 新闻采集失败：{e}")
+        print(f"[ERROR] News collection failed: {e}")
         return
 
-    # 第二阶段：多 Agent 协作生成报告
-    print(f"\n[阶段 2/2] 启动多 Agent 协作系统...")
+    # Phase 2: Multi-Agent Collaboration
+    print("[Phase 2/2] Starting multi-agent collaboration system...")
     try:
         orchestrator = Orchestrator()
         final_report = orchestrator.run(news_items, report_date)
-        
-        # 保存报告
+
+        # Save report
         filename = create_report_file(report_date, final_report)
-        print(f"\n✓ 报告已保存：{filename}")
-        print(f"✓ 推理链日志已保存至 logs/thinking_chain_{report_date}.json")
-        
+        print(f"\n[OK] Report saved: {filename}")
+        print(f"[OK] Chain-of-thought log saved: logs/thinking_chain_{report_date}.json")
+
     except Exception as e:
-        print(f"✗ 报告生成失败：{e}")
-        raise
+        print(f"[ERROR] Report generation failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == '__main__':
