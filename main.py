@@ -1,6 +1,6 @@
 """
 AI Research Digest Agent - Main Program
-Integrates multi-agent collaboration system with 5 different LLM providers
+Integrates multi-agent collaboration system with 4 different LLM providers
 """
 
 import os
