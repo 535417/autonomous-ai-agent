@@ -127,7 +127,7 @@ def create_groq_agent(name: str = "GroqAgent") -> Optional[OpenAICompatibleAgent
     if not api_key:
         print(f"警告：GROQ_API_KEY 未找到，{name} 将被跳过")
         return None
-    return OpenAICompatibleAgent(name, "mixtral-8x7b-32768", api_key, "https://api.groq.com/openai/v1")
+    return OpenAICompatibleAgent(name, "llama-3.3-70b-versatile", api_key, "https://api.groq.com/openai/v1")
 
 
 
@@ -384,7 +384,11 @@ class Orchestrator:
         # Step 1: Collector
         print("[步骤 1/5] 采集器处理中...")
         if self.agents['collector']:
-            collector_output = self.agents['collector'].execute(news_items)
+            try:
+                collector_output = self.agents['collector'].execute(news_items)
+            except Exception as e:
+                print(f"  ⚠ 采集器执行失败：{e}，降级使用原始新闻")
+                collector_output = {"raw_news": news_items, "enriched_result": "\n".join(news_items)}
         else:
             print("降级模式：跳过采集器，使用原始新闻")
             collector_output = {"raw_news": news_items, "enriched_result": "\n".join(news_items)}
@@ -392,7 +396,11 @@ class Orchestrator:
         # Step 2: Classifier
         print("[步骤 2/5] 分类器处理中...")
         if self.agents['classifier']:
-            classifier_output = self.agents['classifier'].execute(collector_output)
+            try:
+                classifier_output = self.agents['classifier'].execute(collector_output)
+            except Exception as e:
+                print(f"  ⚠ 分类器执行失败：{e}，降级跳过")
+                classifier_output = {"collector_output": collector_output, "classified_result": "新闻分类功能不可用"}
         else:
             print("降级模式：跳过分类器")
             classifier_output = {"collector_output": collector_output, "classified_result": "新闻分类功能不可用"}
@@ -400,16 +408,24 @@ class Orchestrator:
         # Step 3: Analyst
         print("[步骤 3/5] 分析师处理中...")
         if self.agents['analyst']:
-            analyst_output = self.agents['analyst'].execute(classifier_output)
+            try:
+                analyst_output = self.agents['analyst'].execute(classifier_output)
+            except Exception as e:
+                print(f"  ⚠ 分析师执行失败：{e}，降级跳过")
+                analyst_output = {"classifier_output": classifier_output, "analysis_result": "趋势分析功能不可用"}
         else:
             print("降级模式：跳过分析师")
             analyst_output = {"classifier_output": classifier_output, "analysis_result": "趋势分析功能不可用"}
 
         # Step 4: Writer
         print("[步骤 4/5] 撰写师处理中...")
+        writer_output = None
         if self.agents['writer']:
-            writer_output = self.agents['writer'].execute(analyst_output, report_date)
-        else:
+            try:
+                writer_output = self.agents['writer'].execute(analyst_output, report_date)
+            except Exception as e:
+                print(f"  ⚠ 撰写师执行失败：{e}，降级生成基础报告")
+        if writer_output is None:
             print("降级模式：基于新闻标题生成中文结构化基础报告")
             raw_items = news_items[:20]
             news_list = "\n".join(
@@ -456,7 +472,11 @@ class Orchestrator:
         # Step 5: Reviewer
         print("[步骤 5/5] 评审师处理中...")
         if self.agents['reviewer']:
-            final_report = self.agents['reviewer'].execute(writer_output)
+            try:
+                final_report = self.agents['reviewer'].execute(writer_output)
+            except Exception as e:
+                print(f"  ⚠ 评审师执行失败：{e}，跳过审核")
+                final_report = writer_output['report_markdown']
         else:
             print("降级模式：跳过评审师")
             final_report = writer_output['report_markdown']
