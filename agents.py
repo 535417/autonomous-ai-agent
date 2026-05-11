@@ -142,7 +142,7 @@ def create_siliconflow_agent(name: str = "SiliconFlowAgent", max_tokens: int = 4
     if not api_key:
         print(f"警告：SILICONFLOW_API_KEY 未找到，{name} 将被跳过")
         return None
-    return OpenAICompatibleAgent(name, "Qwen2-72B-Instruct", api_key, "https://api.siliconflow.cn/v1",
+    return OpenAICompatibleAgent(name, "Qwen/Qwen3-8B", api_key, "https://api.siliconflow.cn/v1",
                                  max_tokens=max_tokens)
 
 
