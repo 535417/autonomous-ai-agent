@@ -77,8 +77,10 @@ class Agent(ABC):
 class OpenAICompatibleAgent(Agent):
     """Generic OpenAI-compatible API agent — single implementation for all providers"""
 
-    def __init__(self, name: str, model: str, api_key: Optional[str], base_url: str):
+    def __init__(self, name: str, model: str, api_key: Optional[str], base_url: str,
+                 max_tokens: int = 4096):
         super().__init__(name, model, api_key, base_url)
+        self.max_tokens = max_tokens
 
     def call_llm(self, messages: List[Dict[str, str]]) -> str:
         if not self.api_key:
@@ -89,7 +91,7 @@ class OpenAICompatibleAgent(Agent):
             model=self.model,
             messages=messages,
             temperature=0.7,
-            max_tokens=8192
+            max_tokens=self.max_tokens
         )
         return response.choices[0].message.content
 
@@ -103,41 +105,45 @@ class OpenAICompatibleAgent(Agent):
 
 # ---- Agent factory functions ----
 
-def create_deepseek_agent(name: str = "DeepSeekAgent") -> Optional[OpenAICompatibleAgent]:
+def create_deepseek_agent(name: str = "DeepSeekAgent", max_tokens: int = 4096) -> Optional[OpenAICompatibleAgent]:
     load_dotenv()
     api_key = os.getenv('DEEPSEEK_API_KEY')
     if not api_key:
         print(f"警告：DEEPSEEK_API_KEY 未找到，{name} 将被跳过")
         return None
-    return OpenAICompatibleAgent(name, "deepseek-chat", api_key, "https://api.deepseek.com/v1")
+    return OpenAICompatibleAgent(name, "deepseek-chat", api_key, "https://api.deepseek.com/v1",
+                                 max_tokens=max_tokens)
 
 
-def create_glm_agent(name: str = "GLMAgent") -> Optional[OpenAICompatibleAgent]:
+def create_glm_agent(name: str = "GLMAgent", max_tokens: int = 4096) -> Optional[OpenAICompatibleAgent]:
     load_dotenv()
     api_key = os.getenv('GLM_API_KEY')
     if not api_key:
         print(f"警告：GLM_API_KEY 未找到，{name} 将被跳过")
         return None
-    return OpenAICompatibleAgent(name, "glm-4", api_key, "https://open.bigmodel.cn/api/paas/v4")
+    return OpenAICompatibleAgent(name, "glm-4", api_key, "https://open.bigmodel.cn/api/paas/v4",
+                                 max_tokens=max_tokens)
 
 
-def create_groq_agent(name: str = "GroqAgent") -> Optional[OpenAICompatibleAgent]:
+def create_groq_agent(name: str = "GroqAgent", max_tokens: int = 4096) -> Optional[OpenAICompatibleAgent]:
     load_dotenv()
     api_key = os.getenv('GROQ_API_KEY')
     if not api_key:
         print(f"警告：GROQ_API_KEY 未找到，{name} 将被跳过")
         return None
-    return OpenAICompatibleAgent(name, "llama-3.3-70b-versatile", api_key, "https://api.groq.com/openai/v1")
+    return OpenAICompatibleAgent(name, "llama-3.3-70b-versatile", api_key, "https://api.groq.com/openai/v1",
+                                 max_tokens=max_tokens)
 
 
 
-def create_siliconflow_agent(name: str = "SiliconFlowAgent") -> Optional[OpenAICompatibleAgent]:
+def create_siliconflow_agent(name: str = "SiliconFlowAgent", max_tokens: int = 4096) -> Optional[OpenAICompatibleAgent]:
     load_dotenv()
     api_key = os.getenv('SILICONFLOW_API_KEY')
     if not api_key:
         print(f"警告：SILICONFLOW_API_KEY 未找到，{name} 将被跳过")
         return None
-    return OpenAICompatibleAgent(name, "Qwen2-72B-Instruct", api_key, "https://api.siliconflow.cn/v1")
+    return OpenAICompatibleAgent(name, "Qwen2-72B-Instruct", api_key, "https://api.siliconflow.cn/v1",
+                                 max_tokens=max_tokens)
 
 
 # ---- Pipeline Agents ----
@@ -339,6 +345,15 @@ class Orchestrator:
         ('reviewer', ['siliconflow', 'deepseek', 'glm', 'groq']),
     ]
 
+    # max_tokens per role: JSON stages get 4096, analysis/report stages get more
+    ROLE_MAX_TOKENS = {
+        'collector': 4096,
+        'classifier': 4096,
+        'analyst': 16384,
+        'writer': 32768,
+        'reviewer': 32768,
+    }
+
     def __init__(self):
         self.agents: Dict[str, Any] = {}
 
@@ -364,11 +379,12 @@ class Orchestrator:
         }
         pipeline_cls = pipeline_cls_map[role]
 
+        max_tokens = self.ROLE_MAX_TOKENS.get(role, 4096)
         for provider in provider_order:
             factory = AGENT_FACTORIES.get(provider)
             if not factory:
                 continue
-            agent = factory(f"{provider}-{role}")
+            agent = factory(f"{provider}-{role}", max_tokens=max_tokens)
             if agent is not None:
                 return pipeline_cls(agent)
 
